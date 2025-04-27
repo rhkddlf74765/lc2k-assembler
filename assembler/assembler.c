@@ -22,7 +22,7 @@ typedef struct SymbolTable{
 
 typedef enum {R_TYPE, I_TYPE, J_TYPE, O_TYPE} INSTRUCTION_TYPE;
 
-typedef enum { ADD, NOR, LW, SW, BEQ, JALR, HALT, NOOP} OPCODE_TABLE;
+typedef enum { ADD, NOR, LW, SW, BEQ, JALR, HALT, NOOP, FILL} OPCODE_TABLE;
 
 // Making instruction structure, calculate registers bit, and return it
 int get_instruction_bit(ParseResult *instruction);
@@ -213,8 +213,9 @@ ParseResult *initialize_instruction(char *label, char *opcode, char *reg0, char 
 	else if (!strcmp(opcode, "beq")) {
         regarr = ParseRegister_Type(reg0, reg1, reg2, I_TYPE);
         // Checking whether the immediate is a number or a label is necessary
-        if (!isNumber(regarr[2])) {
-            regarr[2] = findAddress(regarr[2]) - (PC + 1);
+        if (!isNumber(reg2)) {
+            regarr[2] = findAddress(reg2) - (PC + 1);
+            regarr[2] = regarr[2] & 0xFFFF; // Masking to 16 bits
         } 
         *instruction = (ParseResult){.opcode = BEQ, .reg0 = regarr[0], .reg1 = regarr[1], .immediate = regarr[2]};
     }
@@ -227,19 +228,17 @@ ParseResult *initialize_instruction(char *label, char *opcode, char *reg0, char 
 	else if (!strcmp(opcode, "noop"))
 		*instruction = (ParseResult){.opcode = NOOP};
 	else if (!strcmp(opcode, ".fill")) {
+        instruction->opcode = FILL;
         if (isNumber(reg0)) instruction->immediate = atoi(reg0);
         else instruction->immediate = findAddress(reg0);
+        printf("what the fuck is that %d\n",instruction->immediate);
 	}
 	else {
 		printf("error: unknown opcode %s\n", opcode);
 		exit(1);
 	}
-    if (!regarr){
-        printf("error : parse register type failed\n");
-        exit(1);
-    }
-
-    free(regarr);
+    if (regarr != NULL)
+        free(regarr);
 	return instruction;
 }
 
