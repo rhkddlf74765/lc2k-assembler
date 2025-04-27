@@ -5,6 +5,26 @@
 #include <string.h>
 
 #define MAXLINELENGTH 1000
+// enum LABEL_TABLE{}
+
+typedef struct ParseResult{
+	int opcode;
+	int reg1;
+	int reg2;
+	int destreg;
+	int immediate;
+}ParseResult;
+
+typedef enum INSTRUCTION_TYPE{R_TYPE, I_TYPE, J_TYPE, O_TYPE};
+
+typedef enum OPCODE_TABLE{
+	ADD, NOR, LW, SW, BEQ, JALR, HALT, NOOP
+};
+
+// Making instruction structure, calculate registers bit, and return it
+int get_instruction_bit(ParseResult *instruction);
+int type_bit(int instruction_type, ParseResult *instruction);
+ParseResult *initialize_instruction(char *label, char *opcode, char *reg0, char *reg1, char *reg2);
 
 int readAndParse(FILE *, char *, char *, char *, char *, char *);
 int isNumber(char *);
@@ -53,16 +73,19 @@ int main(int argc, char *argv[])
 
 	/* after doing a readAndParse, you may want to do the following to test the
 		 opcode */
-	if (!strcmp(opcode, "add")) {
-		/* do whatever you need to do for opcode "add" */
-	}
+	ParseResult *instruction = initialize_instruction(label, opcode, arg0, arg1, arg2);
+	int instruction_bit = get_instruction_bit(instruction);
 
+	// if (!strcmp(opcode, "add")) {
+	// 	/* do whatever you need to do for opcode "add" */
+	// }
 	if (inFilePtr) {
 		fclose(inFilePtr);
 	}
 	if (outFilePtr) {
 		fclose(outFilePtr);
 	}
+	free(instruction);
 	return(0);
 }
 
@@ -122,3 +145,61 @@ int isNumber(char *string)
 	return( (sscanf(string, "%d", &i)) == 1);
 }
 
+int get_instruction_bit(ParseResult *instruction){
+	if (0 <= instruction->opcode && instruction->opcode <= 1 ) 	return type_bit(R_TYPE, instruction);
+	else if (instruction->opcode <= 4) 							return type_bit(I_TYPE, instruction);
+	else if (instruction->opcode <= 6) 							return type_bit(J_TYPE, instruction);
+	else if (instruction->opcode == 7) 							return type_bit(O_TYPE, instruction);
+	else return -1;
+}
+
+int type_bit(int instruction_type, ParseResult *instruction){
+	if (instruction_type == R_TYPE){
+		return (instruction->opcode << 22) | (instruction->reg1 << 19) | (instruction->reg2 << 16) | (instruction->destreg << 11);
+	}
+	else if (instruction_type == I_TYPE){
+		return (instruction->opcode << 22) | (instruction->reg1 << 19) | (instruction->reg2 << 16) | instruction->immediate;
+	}
+	else if (instruction_type == J_TYPE){
+		return (instruction->opcode << 22) | instruction->immediate; // need to modify
+	}
+	else if (instruction_type == O_TYPE){
+		return  instruction->opcode << 22;
+	}
+}
+
+ParseResult *initialize_instruction(char *label, char *opcode, char *reg0, char *reg1, char *reg2){
+	ParseResult *instruction = (ParseResult *)malloc(sizeof(ParseResult));
+	
+	if (instruction == NULL) {
+		printf("error: malloc failed\n");
+		exit(1);
+	}
+	
+// need to add label handling here
+// and need to calculate label address and make table
+
+	if (!strcmp(opcode, "add")) instruction->opcode = ADD;
+	else if (!strcmp(opcode, "nor")) instruction->opcode = NOR;
+	else if (!strcmp(opcode, "lw")) instruction->opcode = LW;
+	else if (!strcmp(opcode, "sw")) instruction->opcode = SW;
+	else if (!strcmp(opcode, "beq")) instruction->opcode = BEQ;
+	else if (!strcmp(opcode, "jalr")) instruction->opcode = JALR;
+	else if (!strcmp(opcode, "halt")) instruction->opcode = HALT;
+	else if (!strcmp(opcode, "noop")) instruction->opcode = NOOP;
+	else {
+		printf("error: unknown opcode %s\n", opcode);
+		exit(1);
+	}
+
+	if (isNumber(reg0)) instruction->reg1 = atoi(reg0);
+	else instruction->reg1 = -1;
+	if (isNumber(reg1)) instruction->reg2 = atoi(reg1);
+	else instruction->reg2 = -1;
+	if (isNumber(reg2)) instruction->destreg = atoi(reg2);
+	else instruction->destreg = -1;
+
+	return instruction;
+}
+
+//write register bits to output file
