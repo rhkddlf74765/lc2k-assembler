@@ -29,6 +29,7 @@ int get_instruction_bit(ParseResult *instruction);
 int type_bit(int instruction_type, ParseResult *instruction);
 ParseResult *initialize_instruction(char *label, char *opcode, char *reg0, char *reg1, char *reg2);
 int findAddress(char *targetLabel);
+int *ParseRegister_Type(char *reg0, char *reg1, char *reg2, int Type);
 
 int readAndParse(FILE *, char *, char *, char *, char *, char *);
 int isNumber(char *);
@@ -187,42 +188,58 @@ int type_bit(int instruction_type, ParseResult *instruction){
 
 ParseResult *initialize_instruction(char *label, char *opcode, char *reg0, char *reg1, char *reg2){
 	ParseResult *instruction = (ParseResult *)malloc(sizeof(ParseResult));
-	char *regarr[3] = {reg0, reg1, reg2};
-	int regarr_int[3] = {0,0,0};
-	for (int i = 0 ; i < 3; i++){
-		if (isNumber(regarr[i])) regarr_int[i] = atoi(regarr[i]);
-		else regarr_int[i] = findAddress(regarr[i]);
-	}
-
-	if (instruction == NULL) {
+	int *regarr = NULL;
+    if (instruction == NULL) {
 		printf("error: malloc failed\n");
 		exit(1);
 	}
 
-
-	if 	(!strcmp(opcode, "add"))
-		*instruction = (ParseResult){.opcode = ADD, .reg0 = regarr_int[0], .destreg = regarr_int[1], .reg1 = regarr_int[2]};
-	else if (!strcmp(opcode, "nor"))
-		*instruction = (ParseResult){.opcode = ADD, .reg0 = regarr_int[0], .destreg = regarr_int[1], .reg1 = regarr_int[2]};
-	else if (!strcmp(opcode, "lw")) 
-		*instruction = (ParseResult){.opcode = LW, .reg0 = regarr_int[0], .reg1 = regarr_int[1], .immediate = regarr_int[2]};
-	else if (!strcmp(opcode, "sw")) 
-		*instruction = (ParseResult){.opcode = LW, .reg0 = regarr_int[0], .reg1 = regarr_int[1], .immediate = regarr_int[2]};
-	else if (!strcmp(opcode, "beq")) 
-		*instruction = (ParseResult){.opcode = BEQ, .reg0 = regarr_int[0], .reg1 = regarr_int[1], .immediate = regarr_int[2] - (PC + 1)};
-	else if (!strcmp(opcode, "jalr")) 
-		*instruction = (ParseResult){.opcode = JALR, .reg0 = regarr_int[0], .reg1 = regarr_int[1]};
+	if 	(!strcmp(opcode, "add")){
+        regarr = ParseRegister_Type(reg0, reg1, reg2, R_TYPE);
+		*instruction = (ParseResult){.opcode = ADD, .reg0 = regarr[0], .destreg = regarr[1], .reg1 = regarr[2]};
+    }
+	else if (!strcmp(opcode, "nor")){
+        regarr = ParseRegister_Type(reg0, reg1, reg2, R_TYPE);
+		*instruction = (ParseResult){.opcode = ADD, .reg0 = regarr[0], .destreg = regarr[1], .reg1 = regarr[2]};
+    }
+	else if (!strcmp(opcode, "lw")){ 
+        regarr = ParseRegister_Type(reg0, reg1, reg2, I_TYPE);
+		*instruction = (ParseResult){.opcode = LW, .reg0 = regarr[0], .reg1 = regarr[1], .immediate = regarr[2]};
+    }
+	else if (!strcmp(opcode, "sw")){
+        regarr = ParseRegister_Type(reg0, reg1, reg2, I_TYPE);
+		*instruction = (ParseResult){.opcode = SW, .reg0 = regarr[0], .reg1 = regarr[1], .immediate = regarr[2]};
+    }
+	else if (!strcmp(opcode, "beq")) {
+        regarr = ParseRegister_Type(reg0, reg1, reg2, I_TYPE);
+        // Checking whether the immediate is a number or a label is necessary
+        if (!isNumber(regarr[2])) {
+            regarr[2] = findAddress(regarr[2]) - (PC + 1);
+        } 
+        *instruction = (ParseResult){.opcode = BEQ, .reg0 = regarr[0], .reg1 = regarr[1], .immediate = regarr[2]};
+    }
+	else if (!strcmp(opcode, "jalr")){
+        regarr = ParseRegister_Type(reg0, reg1, NULL, J_TYPE);
+		*instruction = (ParseResult){.opcode = JALR, .reg0 = regarr[0], .reg1 = regarr[1]};
+    }
 	else if (!strcmp(opcode, "halt"))
 		*instruction = (ParseResult){.opcode = HALT};
 	else if (!strcmp(opcode, "noop"))
 		*instruction = (ParseResult){.opcode = NOOP};
 	else if (!strcmp(opcode, ".fill")) {
-		instruction->immediate = regarr_int[0];
+        if (isNumber(reg0)) instruction->immediate = atoi(reg0);
+        else instruction->immediate = findAddress(reg0);
 	}
 	else {
 		printf("error: unknown opcode %s\n", opcode);
 		exit(1);
 	}
+    if (!regarr){
+        printf("error : parse register type failed\n");
+        exit(1);
+    }
+
+    free(regarr);
 	return instruction;
 }
 
@@ -234,4 +251,28 @@ int findAddress(char *targetLabel){
     }
     printf("error: unknown label %s\n", targetLabel);
     exit(1);
+}
+
+int *ParseRegister_Type(char *reg0, char *reg1, char *reg2, int Type){
+    char *regarr[3] = {reg0, reg1, reg2};
+    int *regarr_int = (int *)malloc(3 * sizeof(int)); 
+
+    if (regarr_int == NULL) {
+        printf("malloc failed\n");
+        exit(1);
+    }
+
+    if (Type == R_TYPE || Type == I_TYPE){       
+        for (int i = 0 ; i < 3; i++){
+            if (isNumber(regarr[i])) regarr_int[i] = atoi(regarr[i]);
+            else regarr_int[i] = findAddress(regarr[i]);
+        }
+    }
+    else if (Type == J_TYPE){
+        for (int i = 0 ; i < 2 ; i++){
+            if (isNumber(regarr[i])) regarr_int[i] = atoi(regarr[i]);
+            else regarr_int[i] = findAddress(regarr[i]);
+        }
+    }
+    return regarr_int;
 }
