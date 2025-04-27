@@ -9,33 +9,42 @@
 
 typedef struct ParseResult{
 	int opcode;
+	int reg0;
 	int reg1;
-	int reg2;
 	int destreg;
 	int immediate;
 }ParseResult;
 
-typedef enum INSTRUCTION_TYPE{R_TYPE, I_TYPE, J_TYPE, O_TYPE};
+typedef struct SymbolTable{
+	char Label[100];
+	int address;
+}SymbolTable;
 
-typedef enum OPCODE_TABLE{
-	ADD, NOR, LW, SW, BEQ, JALR, HALT, NOOP
-};
+typedef enum {R_TYPE, I_TYPE, J_TYPE, O_TYPE} INSTRUCTION_TYPE;
+
+typedef enum { ADD, NOR, LW, SW, BEQ, JALR, HALT, NOOP} OPCODE_TABLE;
 
 // Making instruction structure, calculate registers bit, and return it
 int get_instruction_bit(ParseResult *instruction);
 int type_bit(int instruction_type, ParseResult *instruction);
 ParseResult *initialize_instruction(char *label, char *opcode, char *reg0, char *reg1, char *reg2);
+int findAddress(char *targetLabel);
 
 int readAndParse(FILE *, char *, char *, char *, char *, char *);
 int isNumber(char *);
+SymbolTable symbolTable[100];
+int symbolTablecount = 0;
+int PC = 0;
 
 int main(int argc, char *argv[]) 
 {
+	int line = 0;
+	
 	char *inFileString, *outFileString;
 	FILE *inFilePtr, *outFilePtr;
 	char label[MAXLINELENGTH], opcode[MAXLINELENGTH], arg0[MAXLINELENGTH], 
 			 arg1[MAXLINELENGTH], arg2[MAXLINELENGTH];
-	fprintf(outFilePtr, "9999\n"); 
+	// fprintf(outFilePtr, "9999\n"); 
 
 	if (argc != 3) {
 		printf("error: usage: %s <assembly-code-file> <machine-code-file>\n",
@@ -57,10 +66,15 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	/* here is an example for how to use readAndParse to read a line from
-		 inFilePtr */
-	if (!readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2)) {
-		/* reached end of file */
+	/* use readAndParse to read a label
+		read file and make symbol table */
+	while (readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2)) {
+		if (label[0] != '\0') {
+			strcpy(symbolTable[symbolTablecount].Label, label);
+			symbolTable[symbolTablecount].address = line;
+			symbolTablecount++;
+		}
+		line++;
 	}
 
 	/* TODO: Phase-1 label calculation */
@@ -73,9 +87,13 @@ int main(int argc, char *argv[])
 
 	/* after doing a readAndParse, you may want to do the following to test the
 		 opcode */
-	ParseResult *instruction = initialize_instruction(label, opcode, arg0, arg1, arg2);
-	int instruction_bit = get_instruction_bit(instruction);
-
+	while (readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2)){
+		ParseResult *instruction = initialize_instruction(label, opcode, arg0, arg1, arg2);
+		int instruction_bit = get_instruction_bit(instruction);
+		fprintf(outFilePtr, "%d\n", instruction_bit);
+		PC++;
+		free(instruction);
+	}
 	// if (!strcmp(opcode, "add")) {
 	// 	/* do whatever you need to do for opcode "add" */
 	// }
@@ -85,7 +103,6 @@ int main(int argc, char *argv[])
 	if (outFilePtr) {
 		fclose(outFilePtr);
 	}
-	free(instruction);
 	return(0);
 }
 
@@ -150,15 +167,15 @@ int get_instruction_bit(ParseResult *instruction){
 	else if (instruction->opcode <= 4) 							return type_bit(I_TYPE, instruction);
 	else if (instruction->opcode <= 6) 							return type_bit(J_TYPE, instruction);
 	else if (instruction->opcode == 7) 							return type_bit(O_TYPE, instruction);
-	else return -1;
+	else 														return instruction->immediate;
 }
 
 int type_bit(int instruction_type, ParseResult *instruction){
 	if (instruction_type == R_TYPE){
-		return (instruction->opcode << 22) | (instruction->reg1 << 19) | (instruction->reg2 << 16) | (instruction->destreg << 11);
+		return (instruction->opcode << 22) | (instruction->reg0 << 19) | (instruction->reg1 << 16) | instruction->destreg;
 	}
 	else if (instruction_type == I_TYPE){
-		return (instruction->opcode << 22) | (instruction->reg1 << 19) | (instruction->reg2 << 16) | instruction->immediate;
+		return (instruction->opcode << 22) | (instruction->reg0 << 19) | (instruction->reg1 << 16) | instruction->immediate;
 	}
 	else if (instruction_type == J_TYPE){
 		return (instruction->opcode << 22) | instruction->immediate; // need to modify
@@ -170,36 +187,51 @@ int type_bit(int instruction_type, ParseResult *instruction){
 
 ParseResult *initialize_instruction(char *label, char *opcode, char *reg0, char *reg1, char *reg2){
 	ParseResult *instruction = (ParseResult *)malloc(sizeof(ParseResult));
-	
+	char *regarr[3] = {reg0, reg1, reg2};
+	int regarr_int[3] = {0,0,0};
+	for (int i = 0 ; i < 3; i++){
+		if (isNumber(regarr[i])) regarr_int[i] = atoi(regarr[i]);
+		else regarr_int[i] = findAddress(regarr[i]);
+	}
+
 	if (instruction == NULL) {
 		printf("error: malloc failed\n");
 		exit(1);
 	}
-	
-// need to add label handling here
-// and need to calculate label address and make table
 
-	if (!strcmp(opcode, "add")) instruction->opcode = ADD;
-	else if (!strcmp(opcode, "nor")) instruction->opcode = NOR;
-	else if (!strcmp(opcode, "lw")) instruction->opcode = LW;
-	else if (!strcmp(opcode, "sw")) instruction->opcode = SW;
-	else if (!strcmp(opcode, "beq")) instruction->opcode = BEQ;
-	else if (!strcmp(opcode, "jalr")) instruction->opcode = JALR;
-	else if (!strcmp(opcode, "halt")) instruction->opcode = HALT;
-	else if (!strcmp(opcode, "noop")) instruction->opcode = NOOP;
+
+	if 	(!strcmp(opcode, "add"))
+		*instruction = (ParseResult){.opcode = ADD, .reg0 = regarr_int[0], .destreg = regarr_int[1], .reg1 = regarr_int[2]};
+	else if (!strcmp(opcode, "nor"))
+		*instruction = (ParseResult){.opcode = ADD, .reg0 = regarr_int[0], .destreg = regarr_int[1], .reg1 = regarr_int[2]};
+	else if (!strcmp(opcode, "lw")) 
+		*instruction = (ParseResult){.opcode = LW, .reg0 = regarr_int[0], .reg1 = regarr_int[1], .immediate = regarr_int[2]};
+	else if (!strcmp(opcode, "sw")) 
+		*instruction = (ParseResult){.opcode = LW, .reg0 = regarr_int[0], .reg1 = regarr_int[1], .immediate = regarr_int[2]};
+	else if (!strcmp(opcode, "beq")) 
+		*instruction = (ParseResult){.opcode = BEQ, .reg0 = regarr_int[0], .reg1 = regarr_int[1], .immediate = regarr_int[2] - (PC + 1)};
+	else if (!strcmp(opcode, "jalr")) 
+		*instruction = (ParseResult){.opcode = JALR, .reg0 = regarr_int[0], .reg1 = regarr_int[1]};
+	else if (!strcmp(opcode, "halt"))
+		*instruction = (ParseResult){.opcode = HALT};
+	else if (!strcmp(opcode, "noop"))
+		*instruction = (ParseResult){.opcode = NOOP};
+	else if (!strcmp(opcode, ".fill")) {
+		instruction->immediate = regarr_int[0];
+	}
 	else {
 		printf("error: unknown opcode %s\n", opcode);
 		exit(1);
 	}
-
-	if (isNumber(reg0)) instruction->reg1 = atoi(reg0);
-	else instruction->reg1 = -1;
-	if (isNumber(reg1)) instruction->reg2 = atoi(reg1);
-	else instruction->reg2 = -1;
-	if (isNumber(reg2)) instruction->destreg = atoi(reg2);
-	else instruction->destreg = -1;
-
 	return instruction;
 }
 
-//write register bits to output file
+int findAddress(char *targetLabel){
+    for (int i = 0; i < symbolTablecount; i++){
+        if (!strcmp(symbolTable[i].Label, targetLabel)){
+            return symbolTable[i].address;
+        }
+    }
+    printf("error: unknown label %s\n", targetLabel);
+    exit(1);
+}
